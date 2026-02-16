@@ -48,3 +48,6 @@ INSERT INTO historical_events (title, year, date, location, description, categor
 ('Maurya Empire', -322, '2024-01-01', 'Pataliputra', 'Founded by Chandragupta Maurya', 'Empire'),
 ('Mughal Empire Begins', 1526, '2024-01-01', 'Panipat', 'Babur establishes Mughal Empire', 'Empire'),
 ('Indian Independence', 1947, '1947-08-15', 'Delhi', 'India gains independence from British rule', 'Modern');
+
+ALTER TABLE historical_events 
+ADD COLUMN image_path VARCHAR(255) NULL AFTER significance;
