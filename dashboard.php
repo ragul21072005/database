@@ -1,44 +1,62 @@
 <?php
 include '../config/database.php';
 
-// Check if admin is logged in
-if (!isset($_SESSION['admin_id'])) {
+// Check if user is logged in
+if (!isset($_SESSION['user_id'])) {
     header('Location: login.php');
     exit();
 }
 
-// Get statistics
-$total_users = $conn->query("SELECT COUNT(*) as count FROM users")->fetch_assoc()['count'];
-$total_events = $conn->query("SELECT COUNT(*) as count FROM historical_events")->fetch_assoc()['count'];
+// Get user info
+$user_id = $_SESSION['user_id'];
+$user_query = $conn->prepare("SELECT * FROM users WHERE id = ?");
+$user_query->bind_param("i", $user_id);
+$user_query->execute();
+$user = $user_query->get_result()->fetch_assoc();
 
-// Get recent users
-$recent_users = $conn->query("SELECT * FROM users ORDER BY created_at DESC LIMIT 10");
+// Get user statistics
+$favorites_count = 0;
+$history_count = 0;
+
+$fav_query = $conn->prepare("SELECT COUNT(*) as count FROM user_favorites WHERE user_id = ?");
+$fav_query->bind_param("i", $user_id);
+$fav_query->execute();
+$fav_result = $fav_query->get_result();
+if ($fav_result) {
+    $favorites_count = $fav_result->fetch_assoc()['count'];
+}
+
+$hist_query = $conn->prepare("SELECT COUNT(*) as count FROM user_history WHERE user_id = ?");
+$hist_query->bind_param("i", $user_id);
+$hist_query->execute();
+$hist_result = $hist_query->get_result();
+if ($hist_result) {
+    $history_count = $hist_result->fetch_assoc()['count'];
+}
 
 // Get recent events
-$recent_events = $conn->query("SELECT * FROM historical_events ORDER BY created_at DESC LIMIT 10");
+$events_query = $conn->query("SELECT * FROM historical_events ORDER BY year DESC LIMIT 6");
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin Dashboard | Indian History Timeline</title>
+    <title>User Dashboard | Indian History Timeline</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.4/css/dataTables.bootstrap5.min.css"/>
     
     <style>
         :root {
             --primary: #1a237e;
             --secondary: #ffab00;
-            --danger: #d32f2f;
-            --success: #2e7d32;
-            --info: #0277bd;
+            --light: #f8f9fa;
+            --danger: #dc3545;
         }
         
         body {
-            background: #f8f9fa;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
             font-family: 'Inter', sans-serif;
         }
         
@@ -46,19 +64,53 @@ $recent_events = $conn->query("SELECT * FROM historical_events ORDER BY created_
             background: linear-gradient(180deg, var(--primary) 0%, #283593 100%);
             min-height: 100vh;
             color: white;
-            position: fixed;
-            width: 260px;
             box-shadow: 3px 0 20px rgba(0, 0, 0, 0.1);
+            position: fixed;
+            width: 280px;
+            overflow-y: auto;
         }
         
         .sidebar-header {
             padding: 30px 20px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .sidebar-header h4 {
+            margin: 0;
+            font-weight: 600;
+        }
+        
+        .sidebar-header i {
+            color: var(--secondary);
+            margin-right: 10px;
+        }
+        
+        .user-profile {
+            padding: 30px 20px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .profile-pic {
+            width: 100px;
+            height: 100px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+            margin: 0 auto 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            color: var(--secondary);
+            border: 3px solid var(--secondary);
         }
         
         .sidebar-menu {
             padding: 20px 0;
+            display: flex;
+            flex-direction: column;
+            height: calc(100vh - 280px);
         }
         
         .sidebar-menu a {
@@ -70,10 +122,17 @@ $recent_events = $conn->query("SELECT * FROM historical_events ORDER BY created_
             transition: all 0.3s;
         }
         
-        .sidebar-menu a:hover, .sidebar-menu a.active {
+        .sidebar-menu a:hover {
             color: white;
             background: rgba(255, 255, 255, 0.1);
             border-left-color: var(--secondary);
+        }
+        
+        .sidebar-menu a.active {
+            color: white;
+            background: rgba(255, 255, 255, 0.15);
+            border-left-color: var(--secondary);
+            font-weight: 500;
         }
         
         .sidebar-menu i {
@@ -82,28 +141,53 @@ $recent_events = $conn->query("SELECT * FROM historical_events ORDER BY created_
             margin-right: 10px;
         }
         
-        .main-content {
-            margin-left: 260px;
-            padding: 25px;
+        .logout-section {
+            margin-top: auto;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 20px 0;
         }
         
-        .navbar-top {
+        .logout-link {
+            color: #ff9999 !important;
+        }
+        
+        .logout-link:hover {
+            color: #ff4444 !important;
+            background: rgba(255, 0, 0, 0.1) !important;
+        }
+        
+        .main-content {
+            margin-left: 280px;
+            padding: 30px;
+        }
+        
+        .top-navbar {
             background: white;
-            border-radius: 12px;
+            border-radius: 15px;
             padding: 15px 25px;
             box-shadow: 0 5px 20px rgba(0, 0, 0, 0.08);
-            margin-bottom: 25px;
+            margin-bottom: 30px;
+        }
+        
+        .welcome-card {
+            background: linear-gradient(135deg, var(--primary) 0%, #283593 100%);
+            color: white;
+            border-radius: 15px;
+            padding: 40px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 30px rgba(26, 35, 126, 0.3);
+            clip-path: polygon(0 0, 100% 0, 100% 90%, 0 100%);
         }
         
         .stat-card {
             background: white;
             border-radius: 15px;
             padding: 25px;
-            margin-bottom: 20px;
+            text-align: center;
             box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
             transition: all 0.3s;
-            border-top: 4px solid var(--primary);
             height: 100%;
+            border-top: 4px solid var(--primary);
         }
         
         .stat-card:hover {
@@ -112,41 +196,53 @@ $recent_events = $conn->query("SELECT * FROM historical_events ORDER BY created_
         }
         
         .stat-icon {
-            font-size: 45px;
+            font-size: 40px;
+            color: var(--primary);
             margin-bottom: 15px;
         }
         
         .stat-number {
-            font-size: 36px;
+            font-size: 32px;
             font-weight: 700;
             color: var(--primary);
-            line-height: 1;
+            margin-bottom: 5px;
         }
         
-        .table-container {
+        .event-card {
             background: white;
-            border-radius: 15px;
-            padding: 25px;
+            border-radius: 12px;
+            overflow: hidden;
             box-shadow: 0 8px 25px rgba(0, 0, 0, 0.08);
-            margin-bottom: 25px;
+            transition: all 0.3s;
+            height: 100%;
         }
         
-        .table-title {
-            color: var(--primary);
-            padding-bottom: 15px;
-            margin-bottom: 20px;
-            border-bottom: 3px solid var(--secondary);
+        .event-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.12);
+        }
+        
+        .event-year {
+            background: var(--primary);
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-weight: 600;
             display: inline-block;
+            margin-bottom: 10px;
+            font-size: 14px;
         }
         
         .btn-custom {
             background: linear-gradient(135deg, var(--primary) 0%, #283593 100%);
             color: white;
             border: none;
-            padding: 10px 25px;
+            padding: 8px 20px;
             border-radius: 8px;
             font-weight: 500;
             transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
         }
         
         .btn-custom:hover {
@@ -155,93 +251,46 @@ $recent_events = $conn->query("SELECT * FROM historical_events ORDER BY created_
             color: white;
         }
         
-        .btn-danger-custom {
-            background: linear-gradient(135deg, var(--danger) 0%, #b71c1c 100%);
-        }
-        
-        .btn-warning-custom {
-            background: linear-gradient(135deg, var(--secondary) 0%, #ff8f00 100%);
-            color: #212529;
-        }
-        
-        .quick-actions {
-            display: flex;
-            gap: 15px;
-            flex-wrap: wrap;
-        }
-        
-        .quick-action-btn {
-            flex: 1;
-            min-width: 200px;
-            text-align: center;
-            padding: 20px;
-            border-radius: 12px;
-            color: white;
-            text-decoration: none;
-            transition: all 0.3s;
-        }
-        
-        .quick-action-btn:hover {
-            transform: translateY(-5px);
-            color: white;
-            text-decoration: none;
-        }
-        
-        .qa-users {
-            background: linear-gradient(135deg, var(--primary) 0%, #283593 100%);
-        }
-        
-        .qa-events {
-            background: linear-gradient(135deg, var(--success) 0%, #1b5e20 100%);
-        }
-        
-        .qa-add {
-            background: linear-gradient(135deg, var(--info) 0%, #01579b 100%);
-        }
-        
-        .qa-reports {
-            background: linear-gradient(135deg, #6a1b9a 0%, #4a148c 100%);
-        }
-        
-        /* New style for event thumbnails */
-        .event-thumb {
-            width: 40px;
-            height: 40px;
-            object-fit: cover;
-            border-radius: 5px;
+        .btn-outline-custom {
+            background: transparent;
             border: 2px solid var(--primary);
-        }
-        
-        .no-image-badge {
-            background: #f0f0f0;
-            color: #666;
-            padding: 5px 10px;
-            border-radius: 5px;
-            font-size: 11px;
-        }
-        
-        /* Action buttons for events */
-        .action-btn {
-            padding: 3px 8px;
-            border-radius: 4px;
-            color: white;
+            color: var(--primary);
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: all 0.3s;
             text-decoration: none;
-            font-size: 12px;
-            margin: 0 2px;
+            display: inline-block;
         }
         
-        .action-btn:hover {
+        .btn-outline-custom:hover {
+            background: var(--primary);
             color: white;
-            opacity: 0.8;
         }
         
-        .btn-view {
-            background: var(--info);
+        .section-title {
+            color: var(--primary);
+            font-weight: 600;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 3px solid var(--secondary);
+            display: inline-block;
         }
         
-        .btn-edit {
-            background: var(--secondary);
-            color: #212529;
+        @media (max-width: 768px) {
+            .sidebar {
+                width: 100%;
+                position: relative;
+                min-height: auto;
+            }
+            
+            .main-content {
+                margin-left: 0;
+            }
+            
+            .sidebar-menu {
+                height: auto;
+            }
         }
     </style>
 </head>
@@ -249,49 +298,75 @@ $recent_events = $conn->query("SELECT * FROM historical_events ORDER BY created_
     <!-- Sidebar -->
     <div class="sidebar">
         <div class="sidebar-header">
-            <h4><i class="fas fa-user-shield"></i> Admin Panel</h4>
-            <p class="mb-0 small">HistoryTimeline</p>
+            <h4><i class="fas fa-history"></i> HistoryTimeline</h4>
+        </div>
+        
+        <div class="user-profile">
+            <div class="profile-pic">
+                <?php
+                $gender_icon = ($user['gender'] == 'Female') ? 'fa-female' : 'fa-male';
+                echo "<i class='fas $gender_icon'></i>";
+                ?>
+            </div>
+            <h5><?php echo htmlspecialchars($user['name']); ?></h5>
+            <p class="mb-0 small">@<?php echo htmlspecialchars($user['username']); ?></p>
+            <p class="mb-0 small mt-2">
+                <i class="fas fa-envelope"></i> <?php echo htmlspecialchars($user['email']); ?>
+            </p>
         </div>
         
         <div class="sidebar-menu">
             <a href="dashboard.php" class="active">
                 <i class="fas fa-tachometer-alt"></i> Dashboard
             </a>
-            <a href="manage_users.php">
-                <i class="fas fa-users"></i> Manage Users
+            <a href="profile.php">
+                <i class="fas fa-user"></i> My Profile
             </a>
-            <a href="manage_events.php">
-                <i class="fas fa-calendar-alt"></i> Manage Events
+            <a href="search.php">
+                <i class="fas fa-search"></i> Search Events
             </a>
-            <a href="add_event.php">
-                <i class="fas fa-plus-circle"></i> Add Event
+            <a href="favorites.php">
+                <i class="fas fa-heart"></i> Favorites
+                <?php if($favorites_count > 0): ?>
+                    <span class="badge bg-warning text-dark float-end"><?php echo $favorites_count; ?></span>
+                <?php endif; ?>
             </a>
-            <a href="reports.php">
-                <i class="fas fa-chart-bar"></i> Reports
+            <a href="history.php">
+                <i class="fas fa-history"></i> View History
+                <?php if($history_count > 0): ?>
+                    <span class="badge bg-info float-end"><?php echo $history_count; ?></span>
+                <?php endif; ?>
             </a>
             <a href="settings.php">
                 <i class="fas fa-cog"></i> Settings
             </a>
-            <a href="logout.php" class="text-danger mt-5">
-                <i class="fas fa-sign-out-alt"></i> Logout
-            </a>
+            
+            <!-- Logout Section - Fixed and Visible -->
+            <div class="logout-section">
+                <a href="logout.php" class="logout-link">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </a>
+            </div>
         </div>
     </div>
     
     <!-- Main Content -->
     <div class="main-content">
         <!-- Top Navbar -->
-        <nav class="navbar-top">
+        <nav class="top-navbar">
             <div class="container-fluid">
                 <div class="d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">
-                        <i class="fas fa-user-circle text-primary me-2"></i>
-                        Welcome, <?php echo $_SESSION['admin_username']; ?>!
+                        <i class="fas fa-tachometer-alt text-primary me-2"></i>
+                        User Dashboard
                     </h5>
-                    <div class="d-flex align-items-center">
+                    <div>
                         <span class="me-3 text-muted">
-                            <i class="fas fa-calendar-day me-2"></i><?php echo date('F j, Y'); ?>
+                            <i class="fas fa-calendar me-2"></i><?php echo date('F j, Y'); ?>
                         </span>
+                        <a href="../index.php" class="btn btn-sm btn-outline-primary me-2">
+                            <i class="fas fa-home me-2"></i>Home
+                        </a>
                         <a href="logout.php" class="btn btn-sm btn-outline-danger">
                             <i class="fas fa-sign-out-alt me-2"></i>Logout
                         </a>
@@ -300,238 +375,213 @@ $recent_events = $conn->query("SELECT * FROM historical_events ORDER BY created_
             </div>
         </nav>
         
+        <!-- Welcome Card -->
+        <div class="welcome-card">
+            <div class="row align-items-center">
+                <div class="col-lg-8">
+                    <h2>Welcome back, <?php echo htmlspecialchars($user['name']); ?>! 👋</h2>
+                    <p class="mb-0">Continue your journey through Indian history. Explore new events and track your learning progress.</p>
+                </div>
+                <div class="col-lg-4 text-lg-end mt-3 mt-lg-0">
+                    <a href="search.php" class="btn btn-light">
+                        <i class="fas fa-search me-2"></i>Search Events
+                    </a>
+                </div>
+            </div>
+        </div>
+        
         <!-- Quick Stats -->
-        <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="stat-card text-center">
-                    <div class="stat-icon text-primary">
-                        <i class="fas fa-users"></i>
+        <div class="row mb-5">
+            <div class="col-md-3 mb-4">
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-eye"></i>
                     </div>
-                    <h2 class="stat-number"><?php echo $total_users; ?></h2>
-                    <p class="text-muted mb-0">Total Users</p>
+                    <div class="stat-number"><?php echo $history_count; ?></div>
+                    <p class="text-muted mb-0">Events Viewed</p>
                 </div>
             </div>
             
-            <div class="col-md-3">
-                <div class="stat-card text-center">
-                    <div class="stat-icon text-success">
+            <div class="col-md-3 mb-4">
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-heart"></i>
+                    </div>
+                    <div class="stat-number"><?php echo $favorites_count; ?></div>
+                    <p class="text-muted mb-0">Favorites</p>
+                </div>
+            </div>
+            
+            <div class="col-md-3 mb-4">
+                <div class="stat-card">
+                    <div class="stat-icon">
                         <i class="fas fa-calendar-check"></i>
                     </div>
-                    <h2 class="stat-number"><?php echo $total_events; ?></h2>
-                    <p class="text-muted mb-0">Total Events</p>
+                    <?php
+                    // Calculate account age in days
+                    $created = new DateTime($user['created_at']);
+                    $now = new DateTime();
+                    $days_active = $created->diff($now)->days;
+                    ?>
+                    <div class="stat-number"><?php echo $days_active; ?></div>
+                    <p class="text-muted mb-0">Days Active</p>
                 </div>
             </div>
             
-            <div class="col-md-3">
-                <div class="stat-card text-center">
-                    <div class="stat-icon text-warning">
-                        <i class="fas fa-chart-line"></i>
+            <div class="col-md-3 mb-4">
+                <div class="stat-card">
+                    <div class="stat-icon">
+                        <i class="fas fa-trophy"></i>
                     </div>
-                    <h2 class="stat-number">0</h2>
-                    <p class="text-muted mb-0">Today's Visitors</p>
+                    <?php
+                    // Calculate achievements based on activity
+                    $achievements = 0;
+                    if ($history_count >= 5) $achievements++;
+                    if ($favorites_count >= 3) $achievements++;
+                    if ($days_active >= 7) $achievements++;
+                    ?>
+                    <div class="stat-number"><?php echo $achievements; ?></div>
+                    <p class="text-muted mb-0">Achievements</p>
                 </div>
             </div>
-            
-            <div class="col-md-3">
-                <div class="stat-card text-center">
-                    <div class="stat-icon text-info">
-                        <i class="fas fa-tags"></i>
+        </div>
+        
+        <!-- Recent Events -->
+        <div class="row mb-5">
+            <div class="col-12">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4 class="section-title">
+                        <i class="fas fa-calendar-alt me-2"></i>Recent Historical Events
+                    </h4>
+                    <a href="../timeline.php" class="btn btn-outline-custom">
+                        <i class="fas fa-stream me-2"></i>View All Events
+                    </a>
+                </div>
+                
+                <div class="row">
+                    <?php if($events_query && $events_query->num_rows > 0): ?>
+                        <?php while($event = $events_query->fetch_assoc()): ?>
+                        <div class="col-lg-4 col-md-6 mb-4">
+                            <div class="event-card">
+                                <div class="p-4">
+                                    <span class="event-year"><?php echo $event['year']; ?> CE</span>
+                                    <h6 class="mb-2 fw-bold"><?php echo htmlspecialchars($event['title']); ?></h6>
+                                    <p class="small text-muted mb-2">
+                                        <i class="fas fa-map-marker-alt me-2"></i><?php echo htmlspecialchars($event['location']); ?>
+                                    </p>
+                                    <p class="mb-3 small text-secondary">
+                                        <?php echo substr(htmlspecialchars($event['description']), 0, 100); ?>...
+                                    </p>
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <span class="badge bg-info"><?php echo $event['category']; ?></span>
+                                        <a href="../event-details.php?id=<?php echo $event['id']; ?>" class="btn btn-custom btn-sm">
+                                            View Details <i class="fas fa-arrow-right ms-2"></i>
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <?php endwhile; ?>
+                    <?php else: ?>
+                        <div class="col-12">
+                            <div class="alert alert-info text-center p-5">
+                                <i class="fas fa-info-circle fa-3x mb-3"></i>
+                                <h5>No Events Available</h5>
+                                <p>Check back later for new historical events!</p>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Quick Actions Row -->
+        <div class="row">
+            <div class="col-md-6 mb-4">
+                <div class="stat-card text-start p-4">
+                    <h5 class="mb-3"><i class="fas fa-search me-2" style="color: var(--primary);"></i>Quick Search</h5>
+                    <form action="search.php" method="GET" class="row g-3">
+                        <div class="col-md-8">
+                            <input type="number" name="year" class="form-control" 
+                                   placeholder="Enter Year (e.g., 1947)" min="1500" max="2024" required>
+                        </div>
+                        <div class="col-md-4">
+                            <button type="submit" class="btn btn-custom w-100">
+                                <i class="fas fa-search"></i>
+                            </button>
+                        </div>
+                    </form>
+                    <div class="mt-3">
+                        <small class="text-muted">
+                            Try these years: 
+                            <a href="search.php?year=1857" class="text-decoration-none">1857</a>, 
+                            <a href="search.php?year=1947" class="text-decoration-none">1947</a>, 
+                            <a href="search.php?year=1971" class="text-decoration-none">1971</a>
+                        </small>
                     </div>
-                    <h2 class="stat-number">4</h2>
-                    <p class="text-muted mb-0">Categories</p>
                 </div>
             </div>
-        </div>
-        
-        <!-- Quick Actions -->
-        <div class="mb-4">
-            <h5 class="mb-3">Quick Actions</h5>
-            <div class="quick-actions">
-                <a href="manage_users.php" class="quick-action-btn qa-users">
-                    <i class="fas fa-users fa-2x mb-3"></i>
-                    <h6>Manage Users</h6>
-                </a>
-                <a href="manage_events.php" class="quick-action-btn qa-events">
-                    <i class="fas fa-calendar-alt fa-2x mb-3"></i>
-                    <h6>Manage Events</h6>
-                </a>
-                <a href="add_event.php" class="quick-action-btn qa-add">
-                    <i class="fas fa-plus-circle fa-2x mb-3"></i>
-                    <h6>Add New Event</h6>
-                </a>
-                <a href="reports.php" class="quick-action-btn qa-reports">
-                    <i class="fas fa-chart-bar fa-2x mb-3"></i>
-                    <h6>View Reports</h6>
-                </a>
-            </div>
-        </div>
-        
-        <!-- Recent Users Table -->
-        <div class="table-container">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h5 class="table-title"><i class="fas fa-users me-2"></i>Recent Users</h5>
-                <a href="manage_users.php" class="btn btn-custom btn-sm">
-                    <i class="fas fa-eye me-2"></i>View All Users
-                </a>
-            </div>
             
-            <div class="table-responsive">
-                <table class="table table-hover" id="usersTable">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>ID</th>
-                            <th>Name</th>
-                            <th>Email</th>
-                            <th>Username</th>
-                            <th>Gender</th>
-                            <th>Phone</th>
-                            <th>Joined</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php while($user = $recent_users->fetch_assoc()): ?>
-                        <tr>
-                            <td><?php echo $user['id']; ?></td>
-                            <td>
-                                <strong><?php echo htmlspecialchars($user['name']); ?></strong>
-                            </td>
-                            <td><?php echo htmlspecialchars($user['email']); ?></td>
-                            <td>
-                                <span class="badge bg-primary"><?php echo htmlspecialchars($user['username']); ?></span>
-                            </td>
-                            <td>
-                                <?php 
-                                $gender_color = ($user['gender'] == 'Male') ? 'primary' : 
-                                              (($user['gender'] == 'Female') ? 'danger' : 'secondary');
-                                ?>
-                                <span class="badge bg-<?php echo $gender_color; ?>">
-                                    <?php echo $user['gender']; ?>
-                                </span>
-                            </td>
-                            <td><?php echo htmlspecialchars($user['phone']); ?></td>
-                            <td><?php echo date('M d, Y', strtotime($user['created_at'])); ?></td>
-                        </tr>
-                        <?php endwhile; ?>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        
-        <!-- Recent Events Table - MODIFIED WITH IMAGE COLUMN -->
-        <div class="table-container">
-            <div class="d-flex justify-content-between align-items-center mb-4">
-                <h5 class="table-title"><i class="fas fa-calendar-alt me-2"></i>Recent Events</h5>
-                <a href="manage_events.php" class="btn btn-custom btn-sm">
-                    <i class="fas fa-eye me-2"></i>View All Events
-                </a>
-            </div>
-            
-            <div class="table-responsive">
-                <table class="table table-hover" id="eventsTable">
-                    <thead class="table-dark">
-                        <tr>
-                            <th>ID</th>
-                            <th>Image</th>  <!-- NEW COLUMN -->
-                            <th>Event Name</th>
-                            <th>Year</th>
-                            <th>Location</th>
-                            <th>Date</th>
-                            <th>Category</th>
-                            <th>Actions</th> <!-- NEW COLUMN -->
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php while($event = $recent_events->fetch_assoc()): ?>
-                        <tr>
-                            <td><?php echo $event['id']; ?></td>
-                            
-                            <!-- NEW IMAGE COLUMN -->
-                            <td>
-                                <?php if(!empty($event['image_path'])): ?>
-                                    <img src="../<?php echo $event['image_path']; ?>" 
-                                         alt="<?php echo htmlspecialchars($event['title']); ?>" 
-                                         class="event-thumb"
-                                         onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-                                    <span class="no-image-badge" style="display:none;">Invalid</span>
-                                <?php else: ?>
-                                    <span class="no-image-badge">No Image</span>
-                                <?php endif; ?>
-                            </td>
-                            
-                            <td><?php echo htmlspecialchars($event['title']); ?></td>
-                            <td>
-                                <span class="badge bg-primary"><?php echo $event['year']; ?></span>
-                            </td>
-                            <td><?php echo htmlspecialchars($event['location']); ?></td>
-                            <td><?php echo date('M d, Y', strtotime($event['date'])); ?></td>
-                            <td>
-                                <?php
-                                $category_colors = [
-                                    'Ancient' => 'bg-secondary',
-                                    'Medieval' => 'bg-warning text-dark',
-                                    'Empire' => 'bg-info text-dark',
-                                    'Independence' => 'bg-success',
-                                    'Modern' => 'bg-primary'
-                                ];
-                                $color = isset($category_colors[$event['category']]) ? $category_colors[$event['category']] : 'bg-dark';
-                                ?>
-                                <span class="badge <?php echo $color; ?>">
-                                    <?php echo $event['category'] ?? 'Uncategorized'; ?>
-                                </span>
-                            </td>
-                            
-                            <!-- NEW ACTIONS COLUMN -->
-                            <td>
-                                <a href="../event-details.php?id=<?php echo $event['id']; ?>" 
-                                   target="_blank" 
-                                   class="action-btn btn-view" 
-                                   title="View Event">
-                                    <i class="fas fa-eye"></i>
-                                </a>
-                                <a href="edit_event.php?id=<?php echo $event['id']; ?>" 
-                                   class="action-btn btn-edit" 
-                                   title="Edit Event">
-                                    <i class="fas fa-edit"></i>
-                                </a>
-                            </td>
-                        </tr>
-                        <?php endwhile; ?>
-                    </tbody>
-                </table>
+            <div class="col-md-6 mb-4">
+                <div class="stat-card text-start p-4">
+                    <h5 class="mb-3"><i class="fas fa-link me-2" style="color: var(--primary);"></i>Quick Links</h5>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <a href="../timeline.php" class="btn btn-outline-custom w-100">
+                                <i class="fas fa-stream me-2"></i>Timeline
+                            </a>
+                        </div>
+                        <div class="col-6">
+                            <a href="favorites.php" class="btn btn-outline-custom w-100">
+                                <i class="fas fa-heart me-2"></i>Favorites
+                            </a>
+                        </div>
+                        <div class="col-6">
+                            <a href="profile.php" class="btn btn-outline-custom w-100">
+                                <i class="fas fa-user me-2"></i>Profile
+                            </a>
+                        </div>
+                        <div class="col-6">
+                            <a href="settings.php" class="btn btn-outline-custom w-100">
+                                <i class="fas fa-cog me-2"></i>Settings
+                            </a>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- JavaScript Libraries -->
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.4/js/jquery.dataTables.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.4/js/dataTables.bootstrap5.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     
     <script>
-        // Initialize DataTables
-        $(document).ready(function() {
-            $('#usersTable').DataTable({
-                "pageLength": 5,
-                "order": [[0, 'desc']]
-            });
-            
-            $('#eventsTable').DataTable({
-                "pageLength": 5,
-                "order": [[0, 'desc']],
-                "columnDefs": [
-                    { "orderable": false, "targets": [1, 7] } // Disable sorting on image and action columns
-                ]
+        // Highlight active page in sidebar
+        const currentPage = window.location.pathname.split('/').pop();
+        document.querySelectorAll('.sidebar-menu a').forEach(link => {
+            const href = link.getAttribute('href');
+            if (href === currentPage) {
+                link.classList.add('active');
+            }
+        });
+        
+        // Add smooth scrolling
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({ behavior: 'smooth' });
+                }
             });
         });
-
-        // Add tooltips
-        document.querySelectorAll('.action-btn').forEach(btn => {
-            btn.addEventListener('mouseenter', function(e) {
-                const title = this.getAttribute('title');
-                if(title) {
-                    // Simple tooltip can be added here or use Bootstrap tooltips
+        
+        // Confirm logout
+        document.querySelectorAll('.logout-link, .btn-outline-danger').forEach(link => {
+            link.addEventListener('click', function(e) {
+                if (this.getAttribute('href') === 'logout.php') {
+                    if (!confirm('Are you sure you want to logout?')) {
+                        e.preventDefault();
+                    }
                 }
             });
         });
